@@ -1,0 +1,91 @@
+# cloud-config.yaml
+# Save this file and run: multipass launch -n k8s-lab --cloud-init cloud-config.yaml
+
+# Basic instance configuration
+hostname: k8s-lab
+users:
+  - name: devuser
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: [users, admin, docker]
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - <PASTE_YOUR_SSH_PUBLIC_KEY_HERE>
+
+# Package management
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - kubectl
+  - kubeadm
+  - kubelet
+  - containerd
+  - apt-transport-https
+  - curl
+  - wget
+  - git
+  - tree
+  - net-tools
+  - jq
+  - tmux
+  - htop
+  - nmap
+  - dnsutils
+  - fail2ban
+  - python3-venv
+  - software-properties-common
+
+# Repositories
+apt:
+  sources:
+    kubernetes.list:
+      source: deb https://apt.kubernetes.io/ kubernetes-xenial main
+      key: |
+        -----BEGIN PGP PUBLIC KEY BLOCK-----
+        mQENBFq5SksBCADW6wJY4o2Ka2g5HwWg1/9NLcShCkqJgBvJXZ0m8p7yHn0q9Q6
+        ... [PASTE FULL KUBERNETES GPG KEY HERE] ...
+        =R7Ri
+        -----END PGP PUBLIC KEY BLOCK-----
+
+# System configuration
+write_files:
+  - path: /etc/modules-load.d/containerd.conf
+    content: |
+      overlay
+      br_netfilter
+  - path: /etc/sysctl.d/99-kubernetes-cri.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.ipv4.ip_forward                 = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+
+# Boot commands
+bootcmd:
+  - sysctl --system
+  - modprobe overlay
+  - modprobe br_netfilter
+
+# Runtime configuration
+runcmd:
+  # Docker configuration
+  - systemctl enable docker
+  - systemctl start docker
+  - usermod -aG docker devuser
+
+  # Kubernetes setup (k3s lightweight cluster)
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik" sh -
+  - cp /etc/rancher/k3s/k3s.yaml /home/devuser/kubeconfig
+  - chown devuser:devuser /home/devuser/kubeconfig
+
+  # Environment setup
+  - echo 'export KUBECONFIG=~/kubeconfig' >> /home/devuser/.bashrc
+  - echo 'alias k="kubectl"' >> /home/devuser/.bashrc
+  - echo 'alias kgp="kubectl get pods"' >> /home/devuser/.bashrc
+  - echo 'export EDITOR=nano' >> /home/devuser/.bashrc
+
+  # Security
+  - ufw allow 6443 # Kubernetes API
+  - ufw allow 22 # SSH
+
+  # Final updates
+  - updatedb
